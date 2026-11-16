@@ -21,7 +21,7 @@ No `timm` or original `nisar_mae.py` import is required. The encoder matches the
 
 ## 1. Install and choose paths
 
-Extract this folder, activate your existing `.venv-nisar`, and run commands from this folder. Keep the PyTorch build that already works with your GPUs.
+Extract this folder, activate your existing Python virtual environment, and run commands from this folder. Keep the PyTorch build that already works with your GPUs.
 
 ```bash
 pip install -r requirements-data.txt
@@ -31,7 +31,7 @@ The scripts require Python 3.10+ and PyTorch 2.4+ in addition to these data pack
 
 ```csv
 pair_id,area,split,t0_path,t1_path
-example_pair,example_area,train,/absolute/path/t0.h5,/absolute/path/t1.h5
+example_pair,example_area,train,path/to/t0.h5,path/to/t1.h5
 ```
 
 Extra existing columns (dates, track, frame, etc.) are retained in provenance. Relative source paths resolve against the scene CSV's directory.
@@ -42,9 +42,9 @@ This example reserves **Nepal for validation and Netherlands for testing**, usin
 
 ```bash
 python build_change_dataset.py \
-  --manifest /mnt/linux-data/post_train/scene_pairs.csv \
-  --stats /mnt/linux-data/pretrain/tiles \
-  --out /mnt/linux-data/post_train/change_dataset \
+  --manifest path/to/scene_pairs.csv \
+  --stats path/to/pretrain/tiles \
+  --out path/to/change_dataset \
   --val-areas nepal \
   --dry-run
 ```
@@ -61,9 +61,9 @@ Run the same command without `--dry-run`:
 
 ```bash
 python build_change_dataset.py \
-  --manifest /mnt/linux-data/post_train/scene_pairs.csv \
-  --stats /mnt/linux-data/pretrain/tiles \
-  --out /mnt/linux-data/post_train/change_dataset \
+  --manifest path/to/scene_pairs.csv \
+  --stats path/to/pretrain/tiles \
+  --out path/to/change_dataset \
   --val-areas nepal \
   --test-areas netherlands
 ```
@@ -131,11 +131,11 @@ Inspect at least representative changed, unchanged and ambiguous tiles from each
 
 ```bash
 python nisar_auto_labels.py correct \
-  --label /absolute/path/to/labels_editable.tif \
-  --valid /absolute/path/to/valid.tif \
-  --polygons /absolute/path/to/corrections.geojson \
+  --label path/to/labels_editable.tif \
+  --valid path/to/valid.tif \
+  --polygons path/to/corrections.geojson \
   --epsg 32722 \
-  --out /absolute/path/to/labels_corrected.tif
+  --out path/to/labels_corrected.tif
 ```
 
 Replace the example EPSG with the raster's actual CRS. Update the matching CSV row's `label` path to the corrected raster. Keep `label_status=pseudo_unreviewed` or use `partially_reviewed` unless **all labeled pixels in that tile have been checked**. Use `reviewed` only for fully reviewed tiles. Unchecked areas can be set to 255.
@@ -144,15 +144,15 @@ The trainer reads the raster values anew; manifest count fields are extraction-t
 
 ## 5. First run: train the new head, freeze the encoder
 
-Set the checkpoint path to the MAE you actually want to use. The example below uses a checkpoint shown earlier in your project; replace it if a newer checkpoint is preferred.
+Set the checkpoint path to the MAE you actually want to use. The example below uses a generic checkpoint location; replace it with your chosen checkpoint.
 
 ```bash
 CUDA_VISIBLE_DEVICES=0,1,2 torchrun \
   --standalone --nproc_per_node=3 \
   finetune_change.py \
-  --data /mnt/linux-data/post_train/change_dataset \
-  --init-mae /mnt/linux-data/pretrain/runs/nisar_expanded_60ep/best.pt \
-  --out /mnt/linux-data/post_train/runs/change_head_5ep \
+  --data path/to/change_dataset \
+  --init-mae path/to/pretrain/runs/best.pt \
+  --out path/to/runs/change_head_5ep \
   --train-blocks 0 \
   --epochs 5 --warmup-epochs 1 \
   --batch-size 1 --accum-steps 8 \
@@ -183,9 +183,9 @@ After evaluating the frozen-encoder run:
 CUDA_VISIBLE_DEVICES=0,1,2 torchrun \
   --standalone --nproc_per_node=3 \
   finetune_change.py \
-  --data /mnt/linux-data/post_train/change_dataset \
-  --init-change /mnt/linux-data/post_train/runs/change_head_5ep/best.pt \
-  --out /mnt/linux-data/post_train/runs/change_last4_15ep \
+  --data path/to/change_dataset \
+  --init-change path/to/runs/change_head_5ep/best.pt \
+  --out path/to/runs/change_last4_15ep \
   --train-blocks 4 \
   --epochs 15 --warmup-epochs 1 \
   --batch-size 1 --accum-steps 8 \
@@ -203,15 +203,15 @@ Each completed epoch saves `last.pt`; lower validation BCE saves `best.pt`. A st
 
 Metrics are reported separately for all, reviewed, and pseudo-labeled pixels: BCE, change IoU, F1, precision, recall, and confusion counts. Metrics use threshold 0.5 and ignore 255. Undefined ratios are `null`. A good pseudo-label IoU alone is not evidence of scientific correctness or calibrated confidence. Scores are pixel-micro averages and can be dominated by large/easy areas; inspect results by region and review difficult cases.
 
-True resume uses `--resume .../last.pt` **in place of** `--init-mae` or `--init-change`, keeping all other training options, total epoch target, dataset, and GPU count the same. Optimizer/scaler/schedule state is restored at the last completed epoch. Interrupting midway through an epoch loses that epoch's progress. Label edits or dataset additions require a new phase with `--init-change` and a new output directory.
+True resume uses `--resume path/to/runs/last.pt` **in place of** `--init-mae` or `--init-change`, keeping all other training options, total epoch target, dataset, and GPU count the same. Optimizer/scaler/schedule state is restored at the last completed epoch. Interrupting midway through an epoch loses that epoch's progress. Label edits or dataset additions require a new phase with `--init-change` and a new output directory.
 
 Test is excluded from training and model selection. Evaluate it once after choosing the model:
 
 ```bash
 python finetune_change.py \
-  --data /mnt/linux-data/post_train/change_dataset \
-  --init-change /mnt/linux-data/post_train/runs/change_last4_15ep/best.pt \
-  --out /mnt/linux-data/post_train/runs/change_test_evaluation \
+  --data path/to/change_dataset \
+  --init-change path/to/runs/change_last4_15ep/best.pt \
+  --out path/to/runs/change_test_evaluation \
   --eval-only --eval-split test --amp bf16
 ```
 
@@ -221,21 +221,21 @@ Automatic labels in test still measure heuristic agreement. Review an independen
 
 ```bash
 python predict_change.py \
-  --data /mnt/linux-data/post_train/change_dataset \
-  --checkpoint /mnt/linux-data/post_train/runs/change_last4_15ep/best.pt \
+  --data path/to/change_dataset \
+  --checkpoint path/to/runs/change_last4_15ep/best.pt \
   --pair-id amazon_147_A_001_2005_A \
   --split all \
-  --out /mnt/linux-data/post_train/predictions_amazon \
+  --out path/to/predictions_amazon \
   --amp bf16
 
 python stitch_nisar_labels.py \
-  --manifest /mnt/linux-data/post_train/predictions_amazon/prediction_manifest.csv \
-  --out /mnt/linux-data/post_train/predictions_amazon_mosaic
+  --manifest path/to/predictions_amazon/prediction_manifest.csv \
+  --out path/to/predictions_amazon_mosaic
 ```
 
 Each tile has a float sigmoid-score GeoTIFF and a thresholded mask. The stitcher mosaics binary masks plus T0/T1, not probability rasters. The mask mosaic is named `labels_stitched.tif` for compatibility even though these are model predictions. Non-overlapping inference tiles may exhibit model-context seams; overlapping inference with score blending is a future refinement, not implemented here. Pixels outside joint valid coverage stay NoData.
 
-To reconstruct the draft labels instead, give the stitcher `change_dataset/dataset_manifest.csv` and optionally `--pair-id ...`.
+To reconstruct the draft labels instead, give the stitcher `path/to/change_dataset/dataset_manifest.csv` and optionally `--pair-id ...`.
 
 ## Verification and limits
 
